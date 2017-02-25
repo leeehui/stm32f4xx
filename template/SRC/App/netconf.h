@@ -52,8 +52,8 @@
 /* 远端IP地址和端口 */
 #define DEST_IP_ADDR0               192
 #define DEST_IP_ADDR1               168
-#define DEST_IP_ADDR2                 31
-#define DEST_IP_ADDR3                 42
+#define DEST_IP_ADDR2                 0
+#define DEST_IP_ADDR3                 9
 #define DEST_PORT                  6000
 
 /* MAC地址：网卡地址 */
@@ -67,7 +67,7 @@
 /*静态IP地址 */
 #define IP_ADDR0                    192
 #define IP_ADDR1                    168
-#define IP_ADDR2                      31
+#define IP_ADDR2                      0
 #define IP_ADDR3                    122
 
 /* 子网掩码 */
@@ -79,7 +79,7 @@
 /* 网关 */
 #define GW_ADDR0                    192
 #define GW_ADDR1                    168
-#define GW_ADDR2                      31
+#define GW_ADDR2                      0
 #define GW_ADDR3                      1
 
 /* 检测PHY链路状态的实际间隔(单位：ms) */

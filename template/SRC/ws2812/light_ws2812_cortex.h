@@ -32,6 +32,37 @@
 #define ws2812_mask_set  (1<<0)		// Bitmask to set the data out pin
 #define ws2812_mask_clr  (1<<0)		// Bitmask to clear the data out pin
 
+#define ws2812_port_set1 ((uint32_t*)&GPIOB->BSRRL)	// Address of the data port register to set the pin
+#define ws2812_port_clr1	((uint32_t*)&GPIOB->BSRRH)	// Address of the data port register to clear the pin
+
+#define ws2812_mask_set1  (1<<1)		// Bitmask to set the data out pin
+#define ws2812_mask_clr1  (1<<1)		// Bitmask to clear the data out pin
+
+#define ws2812_port_set2 ((uint32_t*)&GPIOB->BSRRL)	// Address of the data port register to set the pin
+#define ws2812_port_clr2	((uint32_t*)&GPIOB->BSRRH)	// Address of the data port register to clear the pin
+
+#define ws2812_mask_set2  (1<<2)		// Bitmask to set the data out pin
+#define ws2812_mask_clr2  (1<<2)		// Bitmask to clear the data out pin
+
+#define ws2812_port_set3 ((uint32_t*)&GPIOB->BSRRL)	// Address of the data port register to set the pin
+#define ws2812_port_clr3	((uint32_t*)&GPIOB->BSRRH)	// Address of the data port register to clear the pin
+
+#define ws2812_mask_set3  (1<<3)		// Bitmask to set the data out pin
+#define ws2812_mask_clr3  (1<<3)		// Bitmask to clear the data out pin
+
+#define ws2812_port_set4 ((uint32_t*)&GPIOB->BSRRL)	// Address of the data port register to set the pin
+#define ws2812_port_clr4	((uint32_t*)&GPIOB->BSRRH)	// Address of the data port register to clear the pin
+
+#define ws2812_mask_set4  (1<<4)		// Bitmask to set the data out pin
+#define ws2812_mask_clr4  (1<<4)		// Bitmask to clear the data out pin
+
+#define ws2812_port_set5 ((uint32_t*)&GPIOB->BSRRL)	// Address of the data port register to set the pin
+#define ws2812_port_clr5	((uint32_t*)&GPIOB->BSRRH)	// Address of the data port register to clear the pin
+
+#define ws2812_mask_set5  (1<<5)		// Bitmask to set the data out pin
+#define ws2812_mask_clr5  (1<<5)		// Bitmask to clear the data out pin
+
+
 ///////////////////////////////////////////////////////////////////////
 // User defined area: Define CPU clock speed
 //

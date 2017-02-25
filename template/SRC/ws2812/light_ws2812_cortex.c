@@ -39,9 +39,9 @@
 //      according to spec, this cpu has 1.25 DMIPS/MHz (Dhrystone 2.1) performance at 0 wait state memory access.
 //      so theoretically less than 1 cpu cycle per instruction.
 //      when cpu runs faster, there will be less affect to the timing, and the assumption is acceptable for timing
-#define w1 (ws2812_t1-2)
-#define w2 (ws2812_t2-ws2812_t1-2)
-#define w3 (ws2812_ctot-ws2812_t2-5)
+#define w1 (ws2812_t1-40)
+#define w2 (ws2812_t2-ws2812_t1-50)
+#define w3 (ws2812_ctot-ws2812_t2-170)
 
 #define ws2812_DEL1 nop;
 #define ws2812_DEL2 nop; nop;
@@ -62,7 +62,7 @@ void ws2812_config_gpio(void)
   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
   
   /* Configure MCO1 pin(PA8) in alternate function */
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0;
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0|GPIO_Pin_1|GPIO_Pin_2|GPIO_Pin_3|GPIO_Pin_4|GPIO_Pin_5;
   GPIO_InitStructure.GPIO_Speed = GPIO_High_Speed;
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
   GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
@@ -179,6 +179,280 @@ void ws2812_sendarray_armcc(uint8_t *data,int datlen)
 	}	
 	//__set_PRIMASK(0);
 }
+
+
+
+/*
+ * Important Note:
+ * 1. Do not use optimization (use default or O(0))
+ * 2. lsl can not change C flag, use lsls instead, this is why "bcs" can not compiled when using lsl
+ */
+void ws2812_send_multi_ch_armcc(uint8_t *data, uint8_t *data1,uint8_t *data2,uint8_t *data3,uint8_t *data4,uint8_t *data5,int datlen)
+{
+	uint32_t maskhi = ws2812_mask_set;
+	uint32_t masklo = ws2812_mask_clr;
+	uint32_t maskhi1 = ws2812_mask_set1;
+	uint32_t masklo1 = ws2812_mask_clr1;
+	uint32_t maskhi2 = ws2812_mask_set2;
+	uint32_t masklo2 = ws2812_mask_clr2;
+	uint32_t maskhi3 = ws2812_mask_set3;
+	uint32_t masklo3 = ws2812_mask_clr3;
+	uint32_t maskhi4 = ws2812_mask_set4;
+	uint32_t masklo4 = ws2812_mask_clr4;
+	uint32_t maskhi5 = ws2812_mask_set5;
+	uint32_t masklo5 = ws2812_mask_clr5;
+
+	volatile uint32_t *set = ws2812_port_set;
+	volatile uint32_t *clr = ws2812_port_clr;
+	volatile uint32_t *set1 = ws2812_port_set1;
+	volatile uint32_t *clr1 = ws2812_port_clr1;
+	volatile uint32_t *set2 = ws2812_port_set2;
+	volatile uint32_t *clr2 = ws2812_port_clr2;
+	volatile uint32_t *set3 = ws2812_port_set3;
+	volatile uint32_t *clr3 = ws2812_port_clr3;
+	volatile uint32_t *set4 = ws2812_port_set4;
+	volatile uint32_t *clr4 = ws2812_port_clr4;
+	volatile uint32_t *set5 = ws2812_port_set5;
+	volatile uint32_t *clr5 = ws2812_port_clr5;
+
+
+	uint32_t i;
+	uint32_t flag;
+	uint32_t curbyte,curbyte1,curbyte2,curbyte3,curbyte4,curbyte5;
+
+	//__set_PRIMASK(1);
+	while (datlen--) {
+		curbyte=*data++;
+		curbyte1=*data1++;
+		curbyte2=*data2++;
+		curbyte3=*data3++;
+		curbyte4=*data4++;
+		curbyte5=*data5++;
+		__ASM {
+			movs i, #0x80               //set i to 1000 0000
+			iloop:                   //main loop
+			
+			movs flag, #0            //reset flag
+
+			tst curbyte, i           //curbyte & i, update cpu flags
+			it eq                    //if z=1(result is 0, which means bit is 0. need set low at T1)
+			orreq flag, #0x01        //channel 1 save flag bit 
+			tst curbyte1, i
+			it eq
+			orreq flag, #0x02        //channel 2
+			tst curbyte2, i
+			it eq
+			orreq flag, #0x04        //channel 3
+			tst curbyte3, i
+			it eq
+			orreq flag, #0x08        //channel 4
+			tst curbyte4, i
+			it eq
+			orreq flag, #0x10        //channel 5
+			tst curbyte5, i
+			it eq
+			orreq flag, #0x20        //channel 6
+
+			str maskhi, [set]        //T0(T3) : set output high   
+			str maskhi1, [set1]
+			str maskhi2, [set2]
+			str maskhi3, [set3]
+			str maskhi4, [set4]
+			str maskhi5, [set5]
+#if (w1&1)                     //nop delay
+			ws2812_DEL1
+#endif
+#if (w1&2)
+			ws2812_DEL2
+#endif
+#if (w1&4)
+			ws2812_DEL4
+#endif
+#if (w1&8)
+			ws2812_DEL8
+#endif
+#if (w1&16)
+			ws2812_DEL16
+#endif
+#if (w1&32)
+			ws2812_DEL32
+#endif
+#if (w1&64)
+			ws2812_DEL64
+#endif
+#if (w1&128)
+			ws2812_DEL128
+#endif
+
+			tst flag, #0x01            //test flag bit 
+			it ne                      //test if bit 1 is 1, which means result is not 0
+			strne masklo, [clr]        //T1 : set output low  
+
+			tst flag, #0x02
+			it ne
+			strne masklo1, [clr1]
+			
+			tst flag, #0x04
+			it ne
+			strne masklo2, [clr2]
+
+			tst flag, #0x08
+			it ne
+			strne masklo3, [clr3]
+
+			tst flag, #0x10
+			it ne
+			strne masklo4, [clr4]
+
+			tst flag, #0x20
+			it ne
+			strne masklo5, [clr5]
+
+        				             
+#if (w2&1)                            //nop delay
+			ws2812_DEL1
+#endif
+#if (w2&2)
+			ws2812_DEL2
+#endif
+#if (w2&4)
+			ws2812_DEL4
+#endif
+#if (w2&8)
+			ws2812_DEL8
+#endif
+#if (w2&16)
+			ws2812_DEL16
+#endif
+#if (w2&32)
+			ws2812_DEL32
+#endif
+#if (w2&64)
+			ws2812_DEL64
+#endif
+#if (w2&128)
+			ws2812_DEL128
+#endif
+
+			lsrs i, #1               //right shift by 1,  sub i by 1
+			str masklo, [clr]        //T2 : unconditionally set output low, Note: str do not change flags
+			str masklo1, [clr1]
+			str masklo2, [clr2]
+			str masklo3, [clr3]
+			str masklo4, [clr4]
+			str masklo5, [clr5]
+#if (w3&1)
+			ws2812_DEL1
+#endif
+#if (w3&2)
+			ws2812_DEL2
+#endif
+#if (w3&4)
+			ws2812_DEL4
+#endif
+#if (w3&8)
+			ws2812_DEL8
+#endif
+#if (w3&16)
+			ws2812_DEL16
+#endif
+#if (w3&32)
+			ws2812_DEL32
+#endif
+#if (w3&64)
+			ws2812_DEL64
+#endif
+#if (w3&128)
+			ws2812_DEL128
+#endif
+			beq end                  //if i == 0 jump out iloop
+			b iloop                  //if program runs here, unconditionall jump to iloop
+			end:
+		}
+	}	
+	//__set_PRIMASK(0);
+}
+
+
+
+void led_demo(void)
+{
+	uint8_t rgb[6*3] = {
+							0x33, 0x0, 0x0,
+							0x0, 0x33, 0x0,
+							0x0, 0x0, 0x33,
+							0x33, 0x0, 0x0,
+							0x0, 0x33, 0x0,
+							0x0, 0x0, 0x33};
+	uint8_t rgb1[6*3] = {
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF,
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF};
+
+	uint8_t rgb2[6*3] = {
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF,
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF};
+
+	uint8_t rgb3[6*3] = {
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF,
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF};
+	uint8_t rgb4[6*3] = {
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF,
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF};
+
+	uint8_t rgb5[6*3] = {
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF,
+							0xFF, 0x0, 0x0,
+							0x0, 0xFF, 0x0,
+							0x0, 0x0, 0xFF};
+
+
+
+	while(1)
+	{
+		for(int i = 0; i < 255; i++)
+		{
+			rgb[0]=i;
+			rgb1[0]=i;
+			rgb2[0]=i;
+			rgb3[0]=i;
+			rgb4[0]=i;
+			rgb5[0]=i;
+
+			ws2812_send_multi_ch_armcc(rgb,rgb1,rgb2,rgb3,rgb4,rgb5,3*3);
+				delay_ms(1);
+		}
+		for(int i = 255; i > 0; i--)
+		{
+			rgb[0]=i;
+			rgb1[0]=i;
+			rgb2[0]=i;
+			rgb3[0]=i;
+			rgb4[0]=i;
+			rgb5[0]=i;
+			ws2812_send_multi_ch_armcc(rgb,rgb1,rgb2,rgb3,rgb4,rgb5,3*3);
+				delay_ms(1);
+		}
+    }
+}
+
 
 //void ws2812_sendarray_gnucc(uint8_t *data,int datlen)
 //{

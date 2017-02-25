@@ -90,14 +90,17 @@ static err_t tcp_echoclient_connected(void *arg, struct tcp_pcb *tpcb, err_t err
 void tcp_echoclient_connect(void)
 {
   struct ip_addr DestIPaddr;
-		
+		struct ip_addr local_ip_addr;
+	
   /* create new tcp pcb */
   echoclient_pcb = tcp_new();
   
   if (echoclient_pcb != NULL)
   {
     IP4_ADDR( &DestIPaddr, DEST_IP_ADDR0, DEST_IP_ADDR1, DEST_IP_ADDR2, DEST_IP_ADDR3 );
-    
+    	  IP4_ADDR( &local_ip_addr,IP_ADDR0,IP_ADDR1,IP_ADDR2,IP_ADDR3);
+	 tcp_bind(echoclient_pcb,&local_ip_addr,3084);
+
     /* connect to destination address/port */
     tcp_connect(echoclient_pcb,&DestIPaddr,DEST_PORT,tcp_echoclient_connected);
   }
