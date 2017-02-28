@@ -15,9 +15,9 @@
 */
 
 //delay 1 nanosecond needs (ws2812_cpuclk/1000)/1000000 cpu clcle
-#define ws2812_ctot	(((ws2812_cpuclk/1000)*1250)/1000000) //1.25μs = 1250ns
-#define ws2812_t1	(((ws2812_cpuclk/1000)*375 )/1000000)	  // floor
-#define ws2812_t2	(((ws2812_cpuclk/1000)*625)/1000000)    // ceil
+#define ws2812_ctot	(((ws2812_cpuclk/1000)*1250)/1000000) //1.25μs = 1250ns  ws2812_ctot = 168 * 1.25 = 210    
+#define ws2812_t1	(((ws2812_cpuclk/1000)*375 )/1000000)	  // floor       ws2812_t1 = 168 * 0.375 = 63
+#define ws2812_t2	(((ws2812_cpuclk/1000)*625)/1000000)    // ceil          ws2812_t2 = 168 * 0.625 = 105
 
 //ZERO
 //  T0______T1       T2        T3
@@ -39,9 +39,14 @@
 //      according to spec, this cpu has 1.25 DMIPS/MHz (Dhrystone 2.1) performance at 0 wait state memory access.
 //      so theoretically less than 1 cpu cycle per instruction.
 //      when cpu runs faster, there will be less affect to the timing, and the assumption is acceptable for timing
-#define w1 (ws2812_t1-40)
-#define w2 (ws2812_t2-ws2812_t1-50)
-#define w3 (ws2812_ctot-ws2812_t2-170)
+#define w1_single (ws2812_t1-2)
+#define w2_single (ws2812_t2-ws2812_t1-2)
+#define w3_single (ws2812_ctot-ws2812_t2-5)
+
+#define w1_multi (ws2812_t1-40) //23
+#define w2_multi (ws2812_t2-ws2812_t1-30)//52
+#define w3_multi (ws2812_ctot-ws2812_t2-95) //63
+
 
 #define ws2812_DEL1 nop;
 #define ws2812_DEL2 nop; nop;
@@ -93,83 +98,83 @@ void ws2812_sendarray_armcc(uint8_t *data,int datlen)
 			iloop:                   //main loop
 			lsls curbyte, #1         //left shift curbyte by #1, subfix "s" tell processor changing the "C" flag
 			str maskhi, [set]        //T0(T3) : set output high   
-#if (w1&1)                     //nop delay
+#if (w1_single&1)                     //nop delay
 			ws2812_DEL1
 #endif
-#if (w1&2)
+#if (w1_single&2)
 			ws2812_DEL2
 #endif
-#if (w1&4)
+#if (w1_single&4)
 			ws2812_DEL4
 #endif
-#if (w1&8)
+#if (w1_single&8)
 			ws2812_DEL8
 #endif
-#if (w1&16)
+#if (w1_single&16)
 			ws2812_DEL16
 #endif
-#if (w1&32)
+#if (w1_single&32)
 			ws2812_DEL32
 #endif
-#if (w1&64)
+#if (w1_single&64)
 			ws2812_DEL64
 #endif
-#if (w1&128)
+#if (w1_single&128)
 			ws2812_DEL128
 #endif
 
 			bcs aaaa                 //skip set output low if MSB is 1, see "lsls" in <<CortexM3ProgrammingManual>>
 			str masklo, [clr]        //T1 : set output low    
 			aaaa:		                 //nop delay
-#if (w2&1)
+#if (w2_single&1)
 			ws2812_DEL1
 #endif
-#if (w2&2)
+#if (w2_single&2)
 			ws2812_DEL2
 #endif
-#if (w2&4)
+#if (w2_single&4)
 			ws2812_DEL4
 #endif
-#if (w2&8)
+#if (w2_single&8)
 			ws2812_DEL8
 #endif
-#if (w2&16)
+#if (w2_single&16)
 			ws2812_DEL16
 #endif
-#if (w2&32)
+#if (w2_single&32)
 			ws2812_DEL32
 #endif
-#if (w2&64)
+#if (w2_single&64)
 			ws2812_DEL64
 #endif
-#if (w2&128)
+#if (w2_single&128)
 			ws2812_DEL128
 #endif
 
 			subs i, #1               //sub i by 1
 			str masklo, [clr]        //T2 : unconditionally set output low, Note: str do not change flags
-#if (w3&1)
+#if (w3_single&1)
 			ws2812_DEL1
 #endif
-#if (w3&2)
+#if (w3_single&2)
 			ws2812_DEL2
 #endif
-#if (w3&4)
+#if (w3_single&4)
 			ws2812_DEL4
 #endif
-#if (w3&8)
+#if (w3_single&8)
 			ws2812_DEL8
 #endif
-#if (w3&16)
+#if (w3_single&16)
 			ws2812_DEL16
 #endif
-#if (w3&32)
+#if (w3_single&32)
 			ws2812_DEL32
 #endif
-#if (w3&64)
+#if (w3_single&64)
 			ws2812_DEL64
 #endif
-#if (w3&128)
+#if (w3_single&128)
 			ws2812_DEL128
 #endif
 			beq end                  //if i == 0 jump out iloop
@@ -259,28 +264,28 @@ void ws2812_send_multi_ch_armcc(uint8_t *data, uint8_t *data1,uint8_t *data2,uin
 			str maskhi3, [set3]
 			str maskhi4, [set4]
 			str maskhi5, [set5]
-#if (w1&1)                     //nop delay
+#if (w1_multi&1)                     //nop delay
 			ws2812_DEL1
 #endif
-#if (w1&2)
+#if (w1_multi&2)
 			ws2812_DEL2
 #endif
-#if (w1&4)
+#if (w1_multi&4)
 			ws2812_DEL4
 #endif
-#if (w1&8)
+#if (w1_multi&8)
 			ws2812_DEL8
 #endif
-#if (w1&16)
+#if (w1_multi&16)
 			ws2812_DEL16
 #endif
-#if (w1&32)
+#if (w1_multi&32)
 			ws2812_DEL32
 #endif
-#if (w1&64)
+#if (w1_multi&64)
 			ws2812_DEL64
 #endif
-#if (w1&128)
+#if (w1_multi&128)
 			ws2812_DEL128
 #endif
 
@@ -309,28 +314,28 @@ void ws2812_send_multi_ch_armcc(uint8_t *data, uint8_t *data1,uint8_t *data2,uin
 			strne masklo5, [clr5]
 
         				             
-#if (w2&1)                            //nop delay
+#if (w2_multi&1)                            //nop delay
 			ws2812_DEL1
 #endif
-#if (w2&2)
+#if (w2_multi&2)
 			ws2812_DEL2
 #endif
-#if (w2&4)
+#if (w2_multi&4)
 			ws2812_DEL4
 #endif
-#if (w2&8)
+#if (w2_multi&8)
 			ws2812_DEL8
 #endif
-#if (w2&16)
+#if (w2_multi&16)
 			ws2812_DEL16
 #endif
-#if (w2&32)
+#if (w2_multi&32)
 			ws2812_DEL32
 #endif
-#if (w2&64)
+#if (w2_multi&64)
 			ws2812_DEL64
 #endif
-#if (w2&128)
+#if (w2_multi&128)
 			ws2812_DEL128
 #endif
 
@@ -341,28 +346,28 @@ void ws2812_send_multi_ch_armcc(uint8_t *data, uint8_t *data1,uint8_t *data2,uin
 			str masklo3, [clr3]
 			str masklo4, [clr4]
 			str masklo5, [clr5]
-#if (w3&1)
+#if (w3_multi&1)
 			ws2812_DEL1
 #endif
-#if (w3&2)
+#if (w3_multi&2)
 			ws2812_DEL2
 #endif
-#if (w3&4)
+#if (w3_multi&4)
 			ws2812_DEL4
 #endif
-#if (w3&8)
+#if (w3_multi&8)
 			ws2812_DEL8
 #endif
-#if (w3&16)
+#if (w3_multi&16)
 			ws2812_DEL16
 #endif
-#if (w3&32)
+#if (w3_multi&32)
 			ws2812_DEL32
 #endif
-#if (w3&64)
+#if (w3_multi&64)
 			ws2812_DEL64
 #endif
-#if (w3&128)
+#if (w3_multi&128)
 			ws2812_DEL128
 #endif
 			beq end                  //if i == 0 jump out iloop
