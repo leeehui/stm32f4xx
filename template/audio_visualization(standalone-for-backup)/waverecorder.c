@@ -203,16 +203,16 @@ void do_fft(void)
 }
 
 
-void update_music_col_len(void)
+void update_music_col_len(uint32_t max_len)
 {
 	for(int i = 0; i < FFT_SIZE; i++)
 	{
 		cur_led_num_ch[i] =  output[i] / 200000 * CH_LED_NUM;
 
 		//do not exceed max value of MODULE_LED_NUM
-		if(cur_led_num_ch[i] > (MODULE_LED_NUM-5))
+		if(cur_led_num_ch[i] > (max_len))
 		{
-			cur_led_num_ch[i] = (MODULE_LED_NUM-5);
+			cur_led_num_ch[i] = (max_len);
 		}
 		
 		//save newest max value
@@ -250,6 +250,8 @@ void led_loop_fft(void)
 {
 	color_t c_music_col = {100,100,0};
 	color_t c_other = {5,5,0};
+	//uint32_t max_len = MODULE_LED_NUM - 5;
+	uint32_t max_len = MODULE_LED_NUM / 2;
 
 	while(1)
 	{
@@ -260,17 +262,32 @@ void led_loop_fft(void)
 		
 		do_fft();
 		
-		update_music_col_len();
+		update_music_col_len(max_len);
 		
-		//debug(info, "led_num_ch0 = %d ", led_num_ch0);		
+		//debug(info, "led_num_ch0 = %d ", led_num_ch0);	
 		
-		//set_led_range_in_ch(0,0, led_num_ch0, &c_music_col);
-		//set_led_range_in_ch(0,led_num_ch0, CH_LED_NUM, &c_other);		
 		
-		for(int j=0; j<10; j++)
+		/*mode 1*/
+//		for(int j=0; j<FFT_SIZE; j++)
+//		{
+//			set_led_range_in_module(0,0, led_num_ch[j], &c_music_col);
+//			set_led_range_in_module(0,led_num_ch[j], MODULE_LED_NUM, &c_other);
+//		}
+
+		/*mode 2*/
+		for(int j=0; j<FFT_SIZE; j++)
 		{
-			set_led_roll_in_module(j, led_num_ch[j], 5, &c_music_col, &c_other);
+			uint32_t temp = MODULE_LED_NUM - led_num_ch[j];
+			set_led_range_in_module(j,0, led_num_ch[j], &c_music_col);
+			set_led_range_in_module(j,led_num_ch[j], temp, &c_other);
+			set_led_range_in_module(j,temp, MODULE_LED_NUM, &c_music_col);
 		}	
+		
+		/*mode 3*/
+//		for(int j=0; j<FFT_SIZE; j++)
+//		{
+//			set_led_roll_in_module(j, led_num_ch[j], 5, &c_music_col, &c_other);
+//		}	
 
 		update_led();
 		delay_ms(5);
