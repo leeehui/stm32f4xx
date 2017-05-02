@@ -53,7 +53,7 @@ static void Delay(__IO uint32_t nTime);
   * @param  None
   * @retval None
   */
-	void delay_ms(uint32_t delay)
+void delay_ms(uint32_t delay)
 {
 	for(int i=0; i<delay; i++)
 	{
