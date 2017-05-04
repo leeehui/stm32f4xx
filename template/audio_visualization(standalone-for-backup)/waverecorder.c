@@ -124,7 +124,7 @@ typedef struct
 #define CH_LED_NUM  120/*total led num of one channel*/
 #define CH_LED_MAX  (CH_LED_NUM - 1)/*for buffer index protection*/
 
-#define MODULE_NUM       20/*total led module num of led controller*/
+#define MODULE_NUM       FFT_SIZE/*total led module num of led controller*/
 #define MODULE_MAX      (MODULE_NUM - 1)/*for buffer index protection*/
 
 #define MODULE_LED_NUM   30/*total led num of one led module*/
@@ -139,21 +139,54 @@ Q_ASSERT_COMPILE((CH_LED_NUM % MODULE_LED_NUM) == 0);
 Q_ASSERT_COMPILE((CH_NUM * CH_LED_NUM) >= (MODULE_NUM * MODULE_LED_NUM));
 
 
-uint32_t cur_target[FFT_SIZE] = {0};
-uint32_t cur_max[FFT_SIZE] = {0};
-uint32_t led_num_ch[FFT_SIZE] = {0};
-uint32_t is_last_target_reached[FFT_SIZE] = {1};
-uint32_t cur_led_num_ch[FFT_SIZE] = {0};
-uint32_t last_led_num_ch[FFT_SIZE] = {0};
+uint32_t cur_target[MODULE_NUM] = {0};
+uint32_t cur_max[MODULE_NUM] = {0};
+uint32_t led_num_ch[MODULE_NUM] = {0};
+uint32_t is_last_target_reached[MODULE_NUM] = {1};
+uint32_t cur_led_num_ch[MODULE_NUM] = {0};
+uint32_t last_led_num_ch[MODULE_NUM] = {0};
+static const uint32_t used_led_num_in_module[MODULE_NUM] = 
+{
+	MODULE_LED_NUM - 0, //module 1
+	MODULE_LED_NUM - 0, //module 2
+	MODULE_LED_NUM - 0, //module 3
+	MODULE_LED_NUM - 0, //module 4
+	MODULE_LED_NUM - 0, //module 5
+	
+	MODULE_LED_NUM - 0, //module 6
+	MODULE_LED_NUM - 0, //module 7
+	MODULE_LED_NUM - 0, //module 8
+	MODULE_LED_NUM - 0, //module 9
+	MODULE_LED_NUM - 0, //module 10
+	
+	MODULE_LED_NUM - 0, //module 11
+	MODULE_LED_NUM - 0, //module 12
+	MODULE_LED_NUM - 0, //module 13
+	MODULE_LED_NUM - 0, //module 14
+	MODULE_LED_NUM - 0, //module 15
+	
+	MODULE_LED_NUM - 0  //module 16
+};
+
+static const uint32_t used_led_num_in_ch[CH_NUM] = 
+{
+	CH_LED_NUM - 0,
+	CH_LED_NUM - 0,
+	CH_LED_NUM - 0,
+	CH_LED_NUM - 0,
+	CH_LED_NUM - 0
+};
+
+static const color_t  c_zero = {0,0,0};
 
 
 void update_led(void);
-void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, color_t *c);
-void set_led_in_module(uint8_t led_module, uint32_t led_module_pos,  color_t *c);
-void set_led_range_in_ch(uint8_t led_ch, uint32_t led_start, uint32_t led_end,  color_t *c);
-void set_led_range_in_module(uint8_t led_module, uint32_t led_start, uint32_t led_end,  color_t *c);
-void set_led_roll_in_ch(uint8_t led_ch, uint32_t roll_pos, uint32_t roll_led_num, color_t *c_roll, color_t *c_other);
-void set_led_roll_in_module(uint8_t led_module, uint32_t roll_pos, uint32_t roll_led_num, color_t *c_roll, color_t *c_other);
+void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, const color_t *c);
+void set_led_in_module(uint8_t led_module, uint32_t led_module_pos,  const color_t *c);
+void set_led_range_in_ch(uint8_t led_ch, uint32_t led_start, uint32_t led_end,  const color_t *c);
+void set_led_range_in_module(uint8_t led_module, uint32_t led_start, uint32_t led_end,  const color_t *c);
+void set_led_roll_in_ch(uint8_t led_ch, uint32_t roll_pos, uint32_t roll_led_num, const color_t *c_roll, const color_t *c_other);
+void set_led_roll_in_module(uint8_t led_module, uint32_t roll_pos, uint32_t roll_led_num, const color_t *c_roll, const color_t *c_other);
 
 
 void delay_ms(uint32_t delay);
@@ -205,7 +238,7 @@ void do_fft(void)
 
 void update_music_col_len(uint32_t max_len)
 {
-	for(int i = 0; i < FFT_SIZE; i++)
+	for(int i = 0; i < MODULE_NUM; i++)
 	{
 		cur_led_num_ch[i] =  output[i] / 200000 * CH_LED_NUM;
 
@@ -227,7 +260,8 @@ void update_music_col_len(uint32_t max_len)
 			is_last_target_reached[i] = 0;
 		}
 		
-		//compare current target with respective led_num_ch which can be interpreted as pos of led roll
+		//compare current target with respective led_num_ch which 
+		//can be interpreted as pos of led roll or other mode specific meanings
 		if(led_num_ch[i] < cur_target[i])
 		{
 			led_num_ch[i] += 1;
@@ -258,29 +292,35 @@ void led_loop_fft(void)
 		while(Data_Status == 0);
 		Data_Status =0;
 		
+		//prepare input data, insert 0 between PCM vlaues inside pAudioRecBuf
 		prepare_data();
 		
+		//update fft value to output
 		do_fft();
 		
+		//visualization, convert freq to pos inside  
 		update_music_col_len(max_len);
 		
-		//debug(info, "led_num_ch0 = %d ", led_num_ch0);	
+		//debug(info, "led_num_ch0 = %d ", led_num_ch[8]);	
 		
 		
+		/**update mem space of led**/
 		/*mode 1*/
 //		for(int j=0; j<FFT_SIZE; j++)
 //		{
-//			set_led_range_in_module(0,0, led_num_ch[j], &c_music_col);
-//			set_led_range_in_module(0,led_num_ch[j], MODULE_LED_NUM, &c_other);
+//			set_led_range_in_module(j,0, led_num_ch[j], &c_music_col);
+//			set_led_range_in_module(j,led_num_ch[j], used_led_num_in_module[j], &c_other);
+//			set_led_range_in_module(j,used_led_num_in_module[j], MODULE_LED_NUM, &c_zero);
 //		}
 
 		/*mode 2*/
-		for(int j=0; j<FFT_SIZE; j++)
+		for(int j=0; j<MODULE_NUM; j++)
 		{
 			uint32_t temp = MODULE_LED_NUM - led_num_ch[j];
 			set_led_range_in_module(j,0, led_num_ch[j], &c_music_col);
 			set_led_range_in_module(j,led_num_ch[j], temp, &c_other);
-			set_led_range_in_module(j,temp, MODULE_LED_NUM, &c_music_col);
+			set_led_range_in_module(j,temp, used_led_num_in_module[j], &c_music_col);
+			set_led_range_in_module(j,used_led_num_in_module[j], MODULE_LED_NUM, &c_zero);
 		}	
 		
 		/*mode 3*/
@@ -289,22 +329,25 @@ void led_loop_fft(void)
 //			set_led_roll_in_module(j, led_num_ch[j], 5, &c_music_col, &c_other);
 //		}	
 
+		//send data to leds
 		update_led();
+		
 		delay_ms(5);
 	}
 }
 
 void set_led_roll_in_ch(uint8_t led_ch, uint32_t roll_pos, uint32_t roll_led_num, 
-							 color_t *c_roll, color_t *c_other)
+							 const color_t *c_roll, const color_t *c_other)
 {
 	uint32_t roll_start = roll_pos;
 	uint32_t roll_end = roll_pos + roll_led_num;
 	set_led_range_in_ch(led_ch, 0, roll_start, c_other);
 	set_led_range_in_ch(led_ch, roll_start, roll_end, c_roll);
-	set_led_range_in_ch(led_ch, roll_end, CH_LED_NUM, c_other);
+	set_led_range_in_ch(led_ch, roll_end, used_led_num_in_ch[led_ch], c_other);
+	set_led_range_in_ch(led_ch, used_led_num_in_ch[led_ch], CH_LED_NUM, &c_zero);
 }
 
-void led_roll_in_ch(uint8_t led_ch_num, uint32_t roll_led_num, color_t *c_roll, color_t *c_other, uint32_t delay)
+void led_roll_in_ch(uint8_t led_ch_num, uint32_t roll_led_num, const color_t *c_roll, const color_t *c_other, uint32_t delay)
 {
 
 	if(roll_led_num > CH_LED_NUM)
@@ -324,16 +367,17 @@ void led_roll_in_ch(uint8_t led_ch_num, uint32_t roll_led_num, color_t *c_roll, 
 }
 
 void set_led_roll_in_module(uint8_t led_module, uint32_t roll_pos, uint32_t roll_led_num, 
-							 color_t *c_roll, color_t *c_other)
+							 const color_t *c_roll, const color_t *c_other)
 {
 	uint32_t roll_start = roll_pos;
 	uint32_t roll_end = roll_pos + roll_led_num;
 	set_led_range_in_module(led_module, 0, roll_start, c_other);
 	set_led_range_in_module(led_module, roll_start, roll_end, c_roll);
-	set_led_range_in_module(led_module, roll_end, MODULE_LED_NUM, c_other);
+	set_led_range_in_module(led_module, roll_end, used_led_num_in_module[led_module], c_other);
+	set_led_range_in_module(led_module, used_led_num_in_module[led_module], MODULE_LED_NUM, &c_zero);
 }
 
-void led_roll_in_module(uint8_t led_module_num, uint32_t roll_led_num, color_t *c_roll, color_t *c_other, uint32_t delay)
+void led_roll_in_module(uint8_t led_module_num, uint32_t roll_led_num, const color_t *c_roll, const color_t *c_other, uint32_t delay)
 {
 
 	if(roll_led_num > MODULE_LED_NUM)
@@ -381,7 +425,7 @@ void led_roll_demo(void)
 	}
 }
 
-void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, color_t *c)
+void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, const color_t *c)
 {
 	if(led_ch > CH_MAX)
 	{
@@ -398,7 +442,7 @@ void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, color_t *c)
 	led_buffer[led_ch][led_ch_buf_pos+1] = c->r;
 	led_buffer[led_ch][led_ch_buf_pos+2] = c->b;
 }
-void set_led_in_module(uint8_t led_module, uint32_t led_module_pos,  color_t *c)
+void set_led_in_module(uint8_t led_module, uint32_t led_module_pos, const color_t *c)
 {
 	if(led_module > MODULE_MAX)
 	{
@@ -416,7 +460,7 @@ void set_led_in_module(uint8_t led_module, uint32_t led_module_pos,  color_t *c)
 	set_led_in_ch(led_ch, led_ch_pos, c);
 }
 
-void set_led_range_in_ch(uint8_t led_ch, uint32_t led_start, uint32_t led_end,  color_t *c)
+void set_led_range_in_ch(uint8_t led_ch, uint32_t led_start, uint32_t led_end,  const color_t *c)
 {
 	if(led_start > led_end)
 	{
@@ -429,7 +473,7 @@ void set_led_range_in_ch(uint8_t led_ch, uint32_t led_start, uint32_t led_end,  
 	}
 }
 
-void set_led_range_in_module(uint8_t led_module, uint32_t led_start, uint32_t led_end,  color_t *c)
+void set_led_range_in_module(uint8_t led_module, uint32_t led_start, uint32_t led_end,  const color_t *c)
 {
 	if(led_start > led_end)
 	{
