@@ -106,17 +106,26 @@ static void WaveRecorder_NVIC_Init(void);
 
 /* Private functions ---------------------------------------------------------*/
 
-typedef struct
+/*led configurations*/
+typedef enum
 {
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
-}color_t;
+	MODE_1 = 0,
+	MODE_2,
+	MODE_3,
+	MODE_END
+}mode_t;
+
+static uint32_t is_led_configuration_updated = 0;
 
 //
 #define Q_ASSERT_COMPILE(test_) \
     extern int32_t Q_assert_compile[(test_) ? 1 : -1]
-		
+
+/*Important Note£º
+	if all modules use same led num,  #define SAME_MODULE_SIZE 0	
+	otherwise,                        #define SAME_MODULE_SIZE 1	
+*/ 
+#define SAME_MODULE_SIZE 0	
 	
 #define CH_NUM      6 /*total channel num of led controller*/
 #define CH_MAX      (CH_NUM - 1) /*for buffer index protection*/
@@ -127,46 +136,74 @@ typedef struct
 #define MODULE_NUM       FFT_SIZE/*total led module num of led controller*/
 #define MODULE_MAX      (MODULE_NUM - 1)/*for buffer index protection*/
 
-#define MODULE_LED_NUM   30/*total led num of one led module*/
-#define MODULE_LED_MAX  (MODULE_LED_NUM - 1)/*for buffer index protection*/
 	
-#define GET_LED_CH(led_module) ((led_module * MODULE_LED_NUM)/CH_LED_NUM) 
-#define GET_LED_CH_POS(led_module, led_module_pos) (((led_module * MODULE_LED_NUM) % CH_LED_NUM) + led_module_pos)
+#if SAME_MODULE_SIZE
+	#define MODULE_LED_NUM(led_module)   30/*total led num of one led module*/
+	#define MODULE_LED_MAX(led_module) (MODULE_LED_NUM(led_module) - 1)/*for buffer index protection*/
 
+	//Note: all indexs start at 0, if led_module = 3, means the 4th module should be located in (3 * 30)/120 = 0(th) channel 
+	#define GET_LED_CH(led_module) ((led_module * MODULE_LED_NUM)/CH_LED_NUM) 
+	#define GET_LED_CH_POS(led_module, led_module_pos) (((led_module * MODULE_LED_NUM) % CH_LED_NUM) + led_module_pos)
+	
+	//led buffer size check
+	Q_ASSERT_COMPILE((CH_LED_NUM % MODULE_LED_NUM) == 0);
+	Q_ASSERT_COMPILE((CH_NUM * CH_LED_NUM) >= (MODULE_NUM * MODULE_LED_NUM));
+
+#else
+	#define MODULE_LED_NUM(led_module)   used_led_num_in_module[led_module]/*total led num of one led module*/
+	#define MODULE_LED_MAX(led_module)  (MODULE_LED_NUM(led_module) - 1)/*for buffer index protection*/
+
+	#define GET_LED_CH(led_module) ((sum_of_former_module[led_module])/CH_LED_NUM) 
+	#define GET_LED_CH_POS(led_module, led_module_pos) (((sum_of_former_module[led_module]) % CH_LED_NUM) + led_module_pos)
+	
+	//security check will be done by calling update_led_configuration()
+	
+#endif
+	
+	
+	
 uint8_t led_buffer[CH_NUM][CH_LED_NUM*3] = {0} ;
 
-Q_ASSERT_COMPILE((CH_LED_NUM % MODULE_LED_NUM) == 0);
-Q_ASSERT_COMPILE((CH_NUM * CH_LED_NUM) >= (MODULE_NUM * MODULE_LED_NUM));
 
 
-uint32_t cur_target[MODULE_NUM] = {0};
-uint32_t cur_max[MODULE_NUM] = {0};
-uint32_t led_num_ch[MODULE_NUM] = {0};
+uint32_t cur_target_pos[MODULE_NUM] = {0};
+uint32_t cur_max_pos[MODULE_NUM] = {0};
+uint32_t output_pos[MODULE_NUM] = {0};
 uint32_t is_last_target_reached[MODULE_NUM] = {1};
-uint32_t cur_led_num_ch[MODULE_NUM] = {0};
-uint32_t last_led_num_ch[MODULE_NUM] = {0};
+uint32_t cur_pos[MODULE_NUM] = {0};
+uint32_t last_pos[MODULE_NUM] = {0};
+uint32_t max_pos[MODULE_NUM] = {0};
+
+//used_led_num_in_module is defined because different module may have different size
+//accurate pos is needed to calculated inside one channel because its serial property
 static const uint32_t used_led_num_in_module[MODULE_NUM] = 
 {
-	MODULE_LED_NUM - 0, //module 1
-	MODULE_LED_NUM - 0, //module 2
-	MODULE_LED_NUM - 0, //module 3
-	MODULE_LED_NUM - 0, //module 4
-	MODULE_LED_NUM - 0, //module 5
+	30, //module 1
+	30, //module 2
+	30, //module 3
+	30, //module 4
+	30, //module 5
 	
-	MODULE_LED_NUM - 0, //module 6
-	MODULE_LED_NUM - 0, //module 7
-	MODULE_LED_NUM - 0, //module 8
-	MODULE_LED_NUM - 0, //module 9
-	MODULE_LED_NUM - 0, //module 10
+	30, //module 6
+	30, //module 7
+	30, //module 8
+	30, //module 9
+	30, //module 10
 	
-	MODULE_LED_NUM - 0, //module 11
-	MODULE_LED_NUM - 0, //module 12
-	MODULE_LED_NUM - 0, //module 13
-	MODULE_LED_NUM - 0, //module 14
-	MODULE_LED_NUM - 0, //module 15
+	30, //module 11
+	30, //module 12
+	30, //module 13
+	30, //module 14
+	30, //module 15
 	
-	MODULE_LED_NUM - 0  //module 16
+	30  //module 16
 };
+
+static uint32_t sum_of_former_module[MODULE_NUM];
+static uint32_t max_led_num_of_modules;
+static uint32_t min_led_num_of_modules;
+
+
 
 static const uint32_t used_led_num_in_ch[CH_NUM] = 
 {
@@ -177,7 +214,16 @@ static const uint32_t used_led_num_in_ch[CH_NUM] =
 	CH_LED_NUM - 0
 };
 
-static const color_t  c_zero = {0,0,0};
+
+typedef uint32_t color_t;
+
+#define COLOR(r,g,b) ((color_t)((0xFF0000 & (r<<16)) | (0xFF00 & (g<<8)) | (0xFF & b) ))
+#define GET_R(c) ((c>>16) & 0xFF)
+#define GET_G(c) ((c>>8) & 0xFF)
+#define GET_B(c) ((c) & 0xFF)
+
+
+static const color_t  c_zero = COLOR(0,0,0);
 
 
 void update_led(void);
@@ -192,24 +238,83 @@ void set_led_roll_in_module(uint8_t led_module, uint32_t roll_pos, uint32_t roll
 void delay_ms(uint32_t delay);
 
 
-__IO uint32_t led_num =0; 
 
-
-void led_loop(void)
+void err_dispaly(void)
 {
-	color_t c_music_col = {20,20,0};
-	color_t c_other = {0,0,0};
-	while(1)
+	
+}
+
+void update_sum_of_former_module(void)
+{
+	sum_of_former_module[0] = 0;
+	for(int i = 1; i < MODULE_NUM; i++)
 	{
-		printf("%d ", led_num);
-		while(Data_Status == 0);
-		Data_Status =0;
-		set_led_range_in_ch(0,0,led_num, &c_music_col);
-		set_led_range_in_ch(0,led_num,CH_LED_NUM, &c_other);
-		update_led();
-		delay_ms(5);
+		sum_of_former_module[i] = sum_of_former_module[i-1] + used_led_num_in_module[i];
 	}
 }
+void update_max_led_num_of_modules(void)
+{
+	max_led_num_of_modules = used_led_num_in_module[0];
+	for(int i = 1; i < MODULE_NUM; i++)
+	{
+		if(max_led_num_of_modules < used_led_num_in_module[i])
+		{
+			max_led_num_of_modules = used_led_num_in_module[i];
+		}
+	}
+}
+void update_min_led_num_of_modules(void)
+{
+	min_led_num_of_modules = used_led_num_in_module[0];
+	for(int i = 1; i < MODULE_NUM; i++)
+	{
+		if(min_led_num_of_modules > used_led_num_in_module[i])
+		{
+			min_led_num_of_modules = used_led_num_in_module[i];
+		}
+	}
+}
+
+void update_max_pos(mode_t mode)
+{
+	switch((uint32_t)mode)
+	{
+		case MODE_1:
+		case MODE_2:
+			for(int i = 0; i < MODULE_NUM; i++)
+			{
+				max_pos[i] = MODULE_LED_NUM(i);
+			}
+			break;
+		case MODE_3:
+			for(int i = 0; i < MODULE_NUM; i++)
+			{
+				max_pos[i] = MODULE_LED_NUM(i) >> 1;
+			}
+			break;
+		default:break;
+	}
+}
+
+
+void update_led_configuration(void)
+{
+	update_sum_of_former_module();
+	update_max_led_num_of_modules();
+	update_min_led_num_of_modules();
+	update_max_pos(MODE_1);
+	//total led buffer nums =  CH_NUM * CH_LED_NUM
+	//also = the (MODULE_NUM-1)(th) used_led_num_in_module + the (MODULE_NUM-1)(th) sum_of_former_module
+	if((CH_NUM * CH_LED_NUM) >= (sum_of_former_module[MODULE_NUM - 2] + used_led_num_in_module[MODULE_NUM - 1]))
+	{
+		is_led_configuration_updated = 1;
+	}
+	else
+	{
+		is_led_configuration_updated = 0;
+	}
+}
+
 
 void update_led(void)
 {
@@ -236,102 +341,111 @@ void do_fft(void)
 }
 
 
-void update_music_col_len(uint32_t max_len)
+void update_music_col_len(void)
 {
 	for(int i = 0; i < MODULE_NUM; i++)
 	{
-		cur_led_num_ch[i] =  output[i] / 200000 * CH_LED_NUM;
+		cur_pos[i] =  output[i] / 200000 * CH_LED_NUM;
 
 		//do not exceed max value of MODULE_LED_NUM
-		if(cur_led_num_ch[i] > (max_len))
+		if(cur_pos[i] > ((max_pos[i])))
 		{
-			cur_led_num_ch[i] = (max_len);
+			cur_pos[i] = ((max_pos[i]));
 		}
 		
 		//save newest max value
-		cur_max[i] = (cur_led_num_ch[i] > last_led_num_ch[i])? cur_led_num_ch[i] : last_led_num_ch[i];	
+		cur_max_pos[i] = (cur_pos[i] > last_pos[i])? cur_pos[i] : last_pos[i];	
 		
 		//update current target value if last target has been completed
 		if(is_last_target_reached[i] == 1)
 		{
-			cur_target[i] = cur_max[i];
-			if(cur_target[i] < 1)
-				cur_target[i] = 1;
+			cur_target_pos[i] = cur_max_pos[i];
+			if(cur_target_pos[i] < 1)
+				cur_target_pos[i] = 1;
 			is_last_target_reached[i] = 0;
 		}
 		
-		//compare current target with respective led_num_ch which 
+		//compare current target with respective output_pos which 
 		//can be interpreted as pos of led roll or other mode specific meanings
-		if(led_num_ch[i] < cur_target[i])
+		if(output_pos[i] < cur_target_pos[i])
 		{
-			led_num_ch[i] += 1;
+			output_pos[i] += 1;
 		}
-		else if (led_num_ch[i] > cur_target[i])
+		else if (output_pos[i] > cur_target_pos[i])
 		{
-			if(led_num_ch[i] > 1)
-				led_num_ch[i]--;			
+			if(output_pos[i] > 1)
+				output_pos[i]--;			
 		}
 		else
 		{
 			is_last_target_reached[i] = 1;
 		}		
 
-		last_led_num_ch[i] = cur_led_num_ch[i];
+		last_pos[i] = cur_pos[i];
 	}
 }
 
 void led_loop_fft(void)
 {
-	color_t c_music_col = {100,100,0};
-	color_t c_other = {5,5,0};
-	//uint32_t max_len = MODULE_LED_NUM - 5;
-	uint32_t max_len = MODULE_LED_NUM / 2;
+	color_t c_music_col = COLOR(0,100,0);
+	color_t c_other = COLOR(5,5,0);
+
+	
+	if(!is_led_configuration_updated)
+	{
+		debug(info, "is_led_configuration_updated is false, please firstly call update_led_configuration()");
+		return;
+	}
+	update_max_pos(MODE_1);
 
 	while(1)
 	{
+		/*wait data ready*/
 		while(Data_Status == 0);
 		Data_Status =0;
 		
-		//prepare input data, insert 0 between PCM vlaues inside pAudioRecBuf
+		/*prepare input data, insert 0 between PCM vlaues inside pAudioRecBuf*/
 		prepare_data();
 		
-		//update fft value to output
+		/*update fft value to output*/
 		do_fft();
 		
-		//visualization, convert freq to pos inside  
-		update_music_col_len(max_len);
+		/*visualization, convert freq to pos inside module*/ 
+		update_music_col_len();
 		
-		//debug(info, "led_num_ch0 = %d ", led_num_ch[8]);	
+		//debug(info, "led_num_ch0 = %d ", output_pos[8]);	
 		
 		
 		/**update mem space of led**/
 		/*mode 1*/
 //		for(int j=0; j<FFT_SIZE; j++)
 //		{
-//			set_led_range_in_module(j,0, led_num_ch[j], &c_music_col);
-//			set_led_range_in_module(j,led_num_ch[j], used_led_num_in_module[j], &c_other);
-//			set_led_range_in_module(j,used_led_num_in_module[j], MODULE_LED_NUM, &c_zero);
+//			set_led_range_in_module(j,0, output_pos[j], &c_music_col);
+//			set_led_range_in_module(j,output_pos[j], used_led_num_in_module[j], &c_other);
+//			set_led_range_in_module(j,used_led_num_in_module[j], MODULE_LED_NUM[j], &c_zero);
 //		}
 
 		/*mode 2*/
-		for(int j=0; j<MODULE_NUM; j++)
+		for(int j=0; j<FFT_SIZE; j++)
 		{
-			uint32_t temp = MODULE_LED_NUM - led_num_ch[j];
-			set_led_range_in_module(j,0, led_num_ch[j], &c_music_col);
-			set_led_range_in_module(j,led_num_ch[j], temp, &c_other);
-			set_led_range_in_module(j,temp, used_led_num_in_module[j], &c_music_col);
-			set_led_range_in_module(j,used_led_num_in_module[j], MODULE_LED_NUM, &c_zero);
+			//c_music_col = COLOR((cur_pos[0]+ 20), (cur_pos[7]+ 20), (cur_pos[MODULE_MAX]+ 20));
+			set_led_roll_in_module(j, output_pos[j], 5, &c_music_col, &c_other);
 		}	
 		
 		/*mode 3*/
-//		for(int j=0; j<FFT_SIZE; j++)
+		/*!!!!!Note: call update_max_pos(MODE_3); before this while(1) loop */
+//		for(int j=0; j<MODULE_NUM; j++)
 //		{
-//			set_led_roll_in_module(j, led_num_ch[j], 5, &c_music_col, &c_other);
+//			uint32_t temp = MODULE_LED_NUM(j) - output_pos[j];
+//			set_led_range_in_module(j,0, output_pos[j], &c_music_col);
+//			set_led_range_in_module(j,output_pos[j], temp, &c_other);
+//			set_led_range_in_module(j,temp, MODULE_LED_NUM(j), &c_music_col);
 //		}	
 
-		//send data to leds
+		/*send data to leds*/
 		update_led();
 		
+		/*control the overall freqency*/
 		delay_ms(5);
 	}
 }
@@ -373,21 +487,21 @@ void set_led_roll_in_module(uint8_t led_module, uint32_t roll_pos, uint32_t roll
 	uint32_t roll_end = roll_pos + roll_led_num;
 	set_led_range_in_module(led_module, 0, roll_start, c_other);
 	set_led_range_in_module(led_module, roll_start, roll_end, c_roll);
-	set_led_range_in_module(led_module, roll_end, used_led_num_in_module[led_module], c_other);
-	set_led_range_in_module(led_module, used_led_num_in_module[led_module], MODULE_LED_NUM, &c_zero);
+	set_led_range_in_module(led_module, roll_end, MODULE_LED_NUM(led_module), c_other);
 }
 
-void led_roll_in_module(uint8_t led_module_num, uint32_t roll_led_num, const color_t *c_roll, const color_t *c_other, uint32_t delay)
-{
 
-	if(roll_led_num > MODULE_LED_NUM)
+//demo of roll in module 
+void led_roll_in_module(uint8_t led_module_num_to_roll, uint32_t roll_led_num, const color_t *c_roll, const color_t *c_other, uint32_t delay)
+{
+	if(roll_led_num > min_led_num_of_modules)
 	{
 		return;
 	}
-	int max = MODULE_LED_NUM - roll_led_num + 1;
+	int max = min_led_num_of_modules - roll_led_num + 1;
 	for(int i=0; i<max; i++)
 	{
-		for(int j=0; j<led_module_num; j++)
+		for(int j=0; j<led_module_num_to_roll; j++)
 		{
 			set_led_roll_in_module(j, i, roll_led_num, c_roll, c_other);
 		}
@@ -398,9 +512,14 @@ void led_roll_in_module(uint8_t led_module_num, uint32_t roll_led_num, const col
 
 void led_roll_demo(void)
 {
-	color_t c_roll = {50,50,0};
-	color_t c_other = {0,0,0};
-	color_t c_init = {0,0,0};
+	color_t c_roll = COLOR(50,50,0);
+	color_t c_other = COLOR(0,0,0);
+	color_t c_init = COLOR(0,0,0);
+	if(!is_led_configuration_updated)
+	{
+		debug(info, "is_led_configuration_updated is false, please firstly call update_led_configuration()");
+		return;
+	}
 	set_led_range_in_ch(0, 0, CH_LED_NUM, &c_init);
 	update_led();
 	for(int i = 0; i <5 ; i++)
@@ -438,10 +557,11 @@ void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, const color_t *c)
 		return;
 	}
 	uint32_t led_ch_buf_pos = led_ch_pos * 3;
-	led_buffer[led_ch][led_ch_buf_pos] = c->g;
-	led_buffer[led_ch][led_ch_buf_pos+1] = c->r;
-	led_buffer[led_ch][led_ch_buf_pos+2] = c->b;
+	led_buffer[led_ch][led_ch_buf_pos] = GET_G(*c);
+	led_buffer[led_ch][led_ch_buf_pos+1] = GET_R(*c);
+	led_buffer[led_ch][led_ch_buf_pos+2] = GET_B(*c);
 }
+
 void set_led_in_module(uint8_t led_module, uint32_t led_module_pos, const color_t *c)
 {
 	if(led_module > MODULE_MAX)
@@ -449,7 +569,7 @@ void set_led_in_module(uint8_t led_module, uint32_t led_module_pos, const color_
 		debug(err, "module too large.");
 		return;
 	}
-	if(led_module_pos > MODULE_LED_MAX)
+	if(led_module_pos > MODULE_LED_MAX(led_module))
 	{
 		debug(err, "led_module_pos too large.");
 		return;
@@ -632,20 +752,6 @@ void AUDIO_REC_SPI_IRQHANDLER(void)
       
       PDM_Filter_64_LSB((uint8_t *)InternalBuffer, (uint16_t *)pAudioRecBuf, volume , (PDMFilter_InitStruct *)&Filter);
 		
-//	  int32_t sum = 0;
-
-//		for(int i = 0; i < PCM_OUT_SIZE; i++)
-//		{
-//			int16_t sdata= pAudioRecBuf[i];
-//			//printf("%d ", sdata);
-//			sum += sdata;
-//		}
-//		sum = sum / PCM_OUT_SIZE;
-//		
-//		led_num = (uint32_t)(((double)(abs(sum)) / wave_max) * (double)ch_led_num);
-		
-
-
       Data_Status = 1;       
     }
   }
