@@ -27,6 +27,7 @@
 #include "light_ws2812_cortex.h"
 #include "bsp_debug_usart.h"
 #include "arm_math.h"
+#include <stdlib.h>
 
 /** @addtogroup STM32F4-Discovery_Audio_Player_Recorder
 * @{
@@ -127,11 +128,13 @@ static uint32_t is_led_configuration_updated = 0;
 */ 
 #define SAME_MODULE_SIZE 0	
 	
+#define CH_UNUSED   51 /*do not used, just for signal stretch*/
+	
 #define CH_NUM      6 /*total channel num of led controller*/
 #define CH_MAX      (CH_NUM - 1) /*for buffer index protection*/
 
-#define CH_LED_NUM  120/*total led num of one channel*/
-#define CH_LED_MAX  (CH_LED_NUM - 1)/*for buffer index protection*/
+#define CH_LED_NUM  (360)/*total led num of one channel*/
+#define CH_LED_MAX  (CH_LED_NUM + CH_UNUSED - 1)/*for buffer index protection*/
 
 #define MODULE_NUM       FFT_SIZE/*total led module num of led controller*/
 #define MODULE_MAX      (MODULE_NUM - 1)/*for buffer index protection*/
@@ -143,7 +146,7 @@ static uint32_t is_led_configuration_updated = 0;
 
 	//Note: all indexs start at 0, if led_module = 3, means the 4th module should be located in (3 * 30)/120 = 0(th) channel 
 	#define GET_LED_CH(led_module) ((led_module * MODULE_LED_NUM)/CH_LED_NUM) 
-	#define GET_LED_CH_POS(led_module, led_module_pos) (((led_module * MODULE_LED_NUM) % CH_LED_NUM) + led_module_pos)
+	#define GET_LED_CH_POS(led_module, led_module_pos) (((led_module * MODULE_LED_NUM) % CH_LED_NUM) + led_module_pos + CH_UNUSED)
 	
 	//led buffer size check
 	Q_ASSERT_COMPILE((CH_LED_NUM % MODULE_LED_NUM) == 0);
@@ -153,8 +156,8 @@ static uint32_t is_led_configuration_updated = 0;
 	#define MODULE_LED_NUM(led_module)   used_led_num_in_module[led_module]/*total led num of one led module*/
 	#define MODULE_LED_MAX(led_module)  (MODULE_LED_NUM(led_module) - 1)/*for buffer index protection*/
 
-	#define GET_LED_CH(led_module) ((sum_of_former_module[led_module])/CH_LED_NUM) 
-	#define GET_LED_CH_POS(led_module, led_module_pos) (((sum_of_former_module[led_module]) % CH_LED_NUM) + led_module_pos)
+	#define GET_LED_CH(led_module) ((sum_of_former_module[led_module] + MODULE_LED_NUM(led_module))/CH_LED_NUM) 
+	#define GET_LED_CH_POS(led_module, led_module_pos) (((sum_of_former_module[led_module] - (GET_LED_CH(led_module) * CH_LED_NUM)) % CH_LED_NUM) + led_module_pos + CH_UNUSED)
 	
 	//security check will be done by calling update_led_configuration()
 	
@@ -162,7 +165,7 @@ static uint32_t is_led_configuration_updated = 0;
 	
 	
 	
-uint8_t led_buffer[CH_NUM][CH_LED_NUM*3] = {0} ;
+uint8_t led_buffer[CH_NUM][(CH_LED_NUM+CH_UNUSED)*3] = {0} ;
 
 
 
@@ -178,15 +181,15 @@ uint32_t max_pos[MODULE_NUM] = {0};
 //accurate pos is needed to calculated inside one channel because its serial property
 static const uint32_t used_led_num_in_module[MODULE_NUM] = 
 {
-	30, //module 1
-	30, //module 2
-	30, //module 3
-	30, //module 4
-	30, //module 5
+	34, //module 1
+	26, //module 2
+	26, //module 3
+	26, //module 4
+	28, //module 5
 	
-	30, //module 6
-	30, //module 7
-	30, //module 8
+	26, //module 6
+	26, //module 7
+	26, //module 8
 	30, //module 9
 	30, //module 10
 	
@@ -225,6 +228,88 @@ typedef uint32_t color_t;
 
 static const color_t  c_zero = COLOR(0,0,0);
 
+static const color_t color_map[20] = 
+{
+	
+	COLOR(110,90,0),
+	COLOR(110,85,0),
+	COLOR(110,80,0),
+	COLOR(110,75,0),
+	COLOR(110,70,0),
+	
+	COLOR(110,65,0),
+	COLOR(110,60,0),
+	COLOR(100,55,0),
+	COLOR(100,50,0),
+	COLOR(100,45,0),
+	
+	COLOR(100,40,0),
+	COLOR(100,35,0),
+	COLOR(100,30,0),
+	COLOR(100,25,0),
+	COLOR(100,20,0),
+	
+	COLOR(100,15,0),
+	COLOR(100,15,0),
+	COLOR(100,15,0),
+	COLOR(100,15,0),
+	COLOR(100,15,0)
+
+//	COLOR(5,5,0),
+//	COLOR(10,10,0),
+//	COLOR(15,15,0),
+//	COLOR(20,20,0),
+//	COLOR(25,25,0),
+//	
+//	COLOR(30,30,0),
+//	COLOR(35,35,0),
+//	COLOR(40,40,0),
+//	COLOR(50,50,0),
+//	COLOR(50,40,0),
+//	
+//	COLOR(50,35,0),
+//	COLOR(50,30,0),
+//	COLOR(50,25,0),
+//	COLOR(50,20,0),
+//	COLOR(50,15,0),
+//	
+//	COLOR(60,20,0),
+//	COLOR(70,30,0),
+//	COLOR(80,40,0),
+//	COLOR(90,50,0),
+//	COLOR(100,0,0)
+};
+
+static const color_t color_map_1[20] = 
+{
+	
+	COLOR(15, 0, 100),
+	COLOR(20, 0, 100),
+	COLOR(25, 0, 100),
+	COLOR(30, 0, 100),
+	COLOR(35, 0, 100),
+	
+	COLOR(40, 0, 100),
+	COLOR(45, 0, 100),
+	COLOR(50, 0, 100),
+	COLOR(55, 0, 100),
+	COLOR(60, 0, 100),
+	
+	COLOR(65, 0, 100),
+	COLOR(70, 0, 100),
+	COLOR(75, 0, 100),
+	COLOR(80, 0, 100),
+	COLOR(85, 0, 100),
+	
+	COLOR(90, 0, 100),
+	COLOR(95, 0, 100),
+	COLOR(95, 0, 95),
+	COLOR(95, 0, 90),
+	COLOR(95, 0, 90)
+
+};
+
+
 
 void update_led(void);
 void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, const color_t *c);
@@ -249,7 +334,11 @@ void update_sum_of_former_module(void)
 	sum_of_former_module[0] = 0;
 	for(int i = 1; i < MODULE_NUM; i++)
 	{
-		sum_of_former_module[i] = sum_of_former_module[i-1] + used_led_num_in_module[i];
+		sum_of_former_module[i] = sum_of_former_module[i-1] + used_led_num_in_module[i-1];
+	}
+	for(int i = 0; i < MODULE_NUM; i++)
+	{
+		debug(info,"sum_of_former_module[i] = %d",  sum_of_former_module[i]);
 	}
 }
 void update_max_led_num_of_modules(void)
@@ -319,7 +408,7 @@ void update_led_configuration(void)
 void update_led(void)
 {
 	ws2812_send_multi_ch_armcc(led_buffer[0],led_buffer[1],led_buffer[2],led_buffer[3],
-								led_buffer[4],led_buffer[5],CH_LED_NUM*3);
+								led_buffer[4],led_buffer[5],(CH_LED_NUM+CH_UNUSED)*3);
 }
 
 void prepare_data(void)
@@ -345,7 +434,14 @@ void update_music_col_len(void)
 {
 	for(int i = 0; i < MODULE_NUM; i++)
 	{
-		cur_pos[i] =  output[i] / 200000 * CH_LED_NUM;
+		if(i > 4)
+		{
+			cur_pos[i] =  output[i] / 50000 * CH_LED_NUM ;
+		}
+		else
+		{			
+			cur_pos[i] =  output[i] / 260000 * CH_LED_NUM;
+		}
 
 		//do not exceed max value of MODULE_LED_NUM
 		if(cur_pos[i] > ((max_pos[i])))
@@ -379,24 +475,132 @@ void update_music_col_len(void)
 		else
 		{
 			is_last_target_reached[i] = 1;
-		}		
+		}
 
 		last_pos[i] = cur_pos[i];
 	}
 }
 
-void led_loop_fft(void)
+void set_music_color(void)
 {
 	color_t c_music_col = COLOR(0,100,0);
-	color_t c_other = COLOR(5,5,0);
+	color_t c_other = COLOR(10,6,0);
+	color_t c_other_1 = COLOR(3,0,6);
+	/**update mem space of led**/
+	/*mode 1*/
+
+//		for(int j=0; j<MODULE_NUM; j++)
+//		{
+//			set_led_range_in_module(j,0, output_pos[j], &c_music_col);
+//			set_led_range_in_module(j,output_pos[j], used_led_num_in_module[j], &c_other);
+//			set_led_range_in_module(j,used_led_num_in_module[j], MODULE_LED_NUM[j], &c_zero);
+//		}
+
+		/*mode 2*/
+		for(int j=0; j<MODULE_NUM; j++)
+		{
+			//c_music_col = COLOR((cur_pos[0]+ 20), (cur_pos[7]+ 20), (cur_pos[MODULE_MAX]+ 20));
+			c_music_col = color_map[(output_pos[j] < 20 ? output_pos[j] : 19)];
+			set_led_roll_in_module(j, output_pos[j], 5, &c_music_col, &c_other);
+		}	
+	
+	/*mode 3*/
+	/*!!!!!Note: call update_max_pos(MODE_3); before this while(1) loop */
+//		for(int j=0; j<MODULE_NUM; j++)
+//		{
+//			uint32_t temp = MODULE_LED_NUM(j) - output_pos[j];
+//			set_led_range_in_module(j,0, output_pos[j], &c_music_col);
+//			set_led_range_in_module(j,output_pos[j], temp, &c_other);
+//			set_led_range_in_module(j,temp, MODULE_LED_NUM(j), &c_music_col);
+//		}	
+}
+
+void set_breath_color(void)
+{
+	static uint32_t speed_counter = 0;
+	static uint32_t color_counter[MODULE_NUM] = {1, 11, 21, 31, 41, 1, 11, 21, 31, 41, 1, 11, 21, 31, 41,1};	
+	static uint32_t color_dir[MODULE_NUM] = {0};
+	static uint32_t wait_flag[MODULE_NUM] = {0};
+	static uint32_t wait_counter[MODULE_NUM] = {0};
+	static uint32_t wait_time[MODULE_NUM] = {0};
+	static color_t c_breath;
+	static color_t c_breath_r;
 
 	
+	speed_counter++;
+	if(speed_counter >  0)
+	{
+		speed_counter = 0;
+		for(int i = 0; i < MODULE_NUM; i++)
+		{			
+
+			if(color_counter[i] > 50)
+			{
+				//color_counter[i] = rand() % 50;
+				color_dir[i] = 1;			
+			}
+			if(color_counter[i] < 2)
+			{
+				if(0 == wait_flag[i])
+				{
+					color_dir[i] = 0;
+					wait_flag[i] = 1;
+					srand(output[0]);
+					wait_time[i] = 	(rand() % 25) + 3;	//随机等待时间，最终会造成随机参差不齐	的效果
+					//debug(info, "wait_time[%d]= %d", i, wait_time[i]);
+				}
+			}
+			
+			if(0 == color_dir[i])
+			{
+				if(wait_flag[i])
+				{
+					if(wait_time[i] == wait_counter[i]++)
+					{
+						wait_counter[i] = 0;
+						wait_flag[i] = 0;
+						color_counter[i] = 2;
+					}
+				}
+				else
+				{
+					color_counter[i]++;
+				}
+			}
+			else
+			{
+				color_counter[i]--;
+			}
+
+		}
+		
+			
+//		uint32_t temp = 51 - color_counter;
+//		c_breath = COLOR(color_counter, color_counter, color_counter * 4);
+//		c_breath_r = COLOR(temp, temp, temp * 4);
+//		
+		for(int j=0; j<MODULE_NUM; j++)
+		{
+			c_breath = COLOR(color_counter[j], color_counter[j], color_counter[j] * 4);
+			set_led_range_in_module(j,0, MODULE_LED_NUM(j), &c_breath);
+		}	
+	}
+}
+
+void led_loop_fft(void)
+{	
 	if(!is_led_configuration_updated)
 	{
 		debug(info, "is_led_configuration_updated is false, please firstly call update_led_configuration()");
 		return;
 	}
+	
 	update_max_pos(MODE_1);
+	
+	uint32_t is_quiet = 1;	
+	
+	static uint32_t is_quiet_counter = 0;
+	static uint32_t is_music_counter = 0;
 
 	while(1)
 	{
@@ -415,33 +619,67 @@ void led_loop_fft(void)
 		
 		//debug(info, "led_num_ch0 = %d ", output_pos[8]);	
 		
-		
-		/**update mem space of led**/
-		/*mode 1*/
-//		for(int j=0; j<FFT_SIZE; j++)
-//		{
-//			set_led_range_in_module(j,0, output_pos[j], &c_music_col);
-//			set_led_range_in_module(j,output_pos[j], used_led_num_in_module[j], &c_other);
-//			set_led_range_in_module(j,used_led_num_in_module[j], MODULE_LED_NUM[j], &c_zero);
-//		}
-
-		/*mode 2*/
-		for(int j=0; j<FFT_SIZE; j++)
+		/*how to determine if there is music being played*/
+		if(0 == is_quiet)
 		{
-			//c_music_col = COLOR((cur_pos[0]+ 20), (cur_pos[7]+ 20), (cur_pos[MODULE_MAX]+ 20));
-			set_led_roll_in_module(j, output_pos[j], 5, &c_music_col, &c_other);
-		}	
-		
-		/*mode 3*/
-		/*!!!!!Note: call update_max_pos(MODE_3); before this while(1) loop */
-//		for(int j=0; j<MODULE_NUM; j++)
-//		{
-//			uint32_t temp = MODULE_LED_NUM(j) - output_pos[j];
-//			set_led_range_in_module(j,0, output_pos[j], &c_music_col);
-//			set_led_range_in_module(j,output_pos[j], temp, &c_other);
-//			set_led_range_in_module(j,temp, MODULE_LED_NUM(j), &c_music_col);
-//		}	
+			uint32_t quiet_counter = 0;
 
+			for(int i = 0; i < MODULE_NUM; i++)
+			{
+				if(output_pos[i] <= 2)
+				{
+					quiet_counter++;
+				}
+			}
+			if(quiet_counter > 4)
+			{
+				is_quiet_counter++;
+			}
+			else
+			{
+				is_quiet_counter=0;
+			}
+			
+			if(is_quiet_counter > 200)
+			{
+				is_quiet = 1;
+			}
+		}
+		else
+		{
+			uint32_t music_counter = 0;
+			for(int i = 0; i < MODULE_NUM; i++)
+			{
+				if(output_pos[i] > 2)
+				{
+					music_counter++;
+				}
+			}
+			if(music_counter > 4)
+			{
+				is_music_counter++;
+			}
+			else
+			{
+				is_music_counter=0;
+			}
+			
+			if(is_music_counter > 70)
+			{
+				is_quiet = 0;
+			}
+		}
+		
+		
+		if(1 == is_quiet)
+		{
+			set_breath_color();
+		}
+		else
+		{
+			set_music_color();
+		}
+		
 		/*send data to leds*/
 		update_led();
 		
@@ -553,9 +791,10 @@ void set_led_in_ch(uint8_t led_ch, uint32_t led_ch_pos, const color_t *c)
 	}
 	if(led_ch_pos > CH_LED_MAX)
 	{
-		debug(err, "led_ch_pos(%d) too large.", led_ch_pos);
+		debug(err, "led_ch_pos(%d) in ch(%d) too large.", led_ch_pos, led_ch);
 		return;
 	}
+	//debug(info, "ch(%d),ch_pos(%d)", led_ch,led_ch_pos);
 	uint32_t led_ch_buf_pos = led_ch_pos * 3;
 	led_buffer[led_ch][led_ch_buf_pos] = GET_G(*c);
 	led_buffer[led_ch][led_ch_buf_pos+1] = GET_R(*c);
@@ -576,7 +815,7 @@ void set_led_in_module(uint8_t led_module, uint32_t led_module_pos, const color_
 	}
 	
 	uint8_t led_ch = GET_LED_CH(led_module);
-	uint8_t led_ch_pos = GET_LED_CH_POS(led_module, led_module_pos);
+	uint32_t led_ch_pos = GET_LED_CH_POS(led_module, led_module_pos);
 	set_led_in_ch(led_ch, led_ch_pos, c);
 }
 
