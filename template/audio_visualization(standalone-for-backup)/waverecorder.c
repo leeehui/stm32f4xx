@@ -185,9 +185,9 @@ static const uint32_t used_led_num_in_module[MODULE_NUM] =
 	26, //module 2
 	26, //module 3
 	26, //module 4
-	28, //module 5
+	26, //module 5
 	
-	26, //module 6
+	28, //module 6
 	26, //module 7
 	26, //module 8
 	30, //module 9
@@ -631,7 +631,7 @@ void led_loop_fft(void)
 					quiet_counter++;
 				}
 			}
-			if(quiet_counter > 4)
+			if(quiet_counter > 6)
 			{
 				is_quiet_counter++;
 			}
@@ -640,7 +640,7 @@ void led_loop_fft(void)
 				is_quiet_counter=0;
 			}
 			
-			if(is_quiet_counter > 200)
+			if(is_quiet_counter > 50)
 			{
 				is_quiet = 1;
 			}
@@ -664,7 +664,7 @@ void led_loop_fft(void)
 				is_music_counter=0;
 			}
 			
-			if(is_music_counter > 70)
+			if(is_music_counter > 40)
 			{
 				is_quiet = 0;
 			}
